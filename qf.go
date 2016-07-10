@@ -17,7 +17,8 @@ func init() {
 // ErrFull is returned when Add is called while the filter is at max capacity.
 var ErrFull = errors.New("filter is at its max capacity")
 
-// QuotientFilter is the implementation
+// QuotientFilter is a basic quotient filter implementation.
+// None of the methods are thread safe.
 type QuotientFilter struct {
 	// quotient and remainder bits
 	qbits uint8
@@ -38,9 +39,11 @@ type QuotientFilter struct {
 }
 
 // NewPropability returns a quotient filter that can accomidate capacity number of elements
-// with propability passed.
+// and maintain the propability passed.
 func NewPropability(capacity int, propability float64) *QuotientFilter {
-	q := uint8(math.Ceil(math.Log2(float64(capacity))))
+	// size to double asked capacity so that propability is maintained
+	// at capacity num keys (at 50% fill rate)
+	q := uint8(math.Ceil(math.Log2(float64(capacity * 2))))
 	r := uint8(-math.Log2(propability))
 	return New(q, r)
 }
@@ -74,8 +77,20 @@ func New(q, r uint8) *QuotientFilter {
 	return qf
 }
 
+// FPPropability returns the propability for false positive with the current fillrate
+// n = length
+// m = capacity
+// a = n / m
+// r = remainder bits
+// then propability for false positive is
+// 1 - e^(-a/2^r) <= 2^-r
+func (qf *QuotientFilter) FPPropability() float64 {
+	a := float64(qf.len) / float64(qf.cap)
+	return 1.0 - math.Pow(math.E, -(a/math.Pow(2, float64(qf.rbits))))
+}
+
 func (qf *QuotientFilter) info() {
-	fmt.Printf("Filter qbits: %d, rbits: %d, len: %d, capacity: %d\n", qf.qbits, qf.rbits, qf.len, qf.cap)
+	fmt.Printf("Filter qbits: %d, rbits: %d, len: %d, capacity: %d, current fp rate: %f\n", qf.qbits, qf.rbits, qf.len, qf.cap, qf.FPPropability())
 	fmt.Println("slot, (is_occopied:is_continuation:is_shifted): remainder")
 	for i := uint64(0); i < qf.cap; i++ {
 		s := qf.getSlot(i)
@@ -92,7 +107,7 @@ func (qf *QuotientFilter) quotientAndRemainder(h uint64) (uint64, uint64) {
 }
 
 func (qf *QuotientFilter) hash(key string) uint64 {
-	qf.h.Reset()
+	defer qf.h.Reset()
 	qf.h.Write([]byte(key))
 	return qf.h.Sum64()
 }

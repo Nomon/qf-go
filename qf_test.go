@@ -8,16 +8,24 @@ import (
 )
 
 func TestNewPropability(t *testing.T) {
-	qf := NewPropability(100000, 0.001)
-	if qf.cap <= 100000 {
-		t.Fatal("Too small filter")
+	tests := []struct {
+		P float64
+		S int
+	}{{0.001, 10000}, {0.01, 10000}, {0.1, 10000}, {0.3, 10000},
+		{0.001, 100000}, {0.01, 100000}, {0.1, 100000}, {0.3, 100000}}
+	for _, test := range tests {
+		qf := NewPropability(test.S, test.P)
+		qf.AddAll(generateItems(test.S))
+		if qf.FPPropability() > test.P {
+			t.Fatal("False positive rate too high, asked", test.P, "got", qf.FPPropability(), "test", test)
+		}
 	}
 }
 
 func TestAddBasic(t *testing.T) {
 	qf := New(8, 3)
 
-	added := []string{"brown", "fox", "jump"}
+	added := generateItems(100) // []string{"brown", "fox", "jump"}
 	not := []string{"turbo", "negro"}
 	qf.AddAll(added)
 	qf.info()
@@ -38,7 +46,7 @@ func TestFalseNegatives(t *testing.T) {
 	tests := []struct {
 		P float64
 		S int
-	}{{0.01, 1000}, {0.01, 10000}, {0.01, 100000}, {0.01, 1000000}}
+	}{{0.01, 1000}, {0.01, 10000}, {0.01, 100000}}
 	for _, test := range tests {
 		qf := NewPropability(test.S, test.P)
 		items := generateItems(test.S / 2)
@@ -55,9 +63,9 @@ func TestFalsePositives(t *testing.T) {
 	tests := []struct {
 		P float64
 		S int
-	}{{0.001, 10000}, {0.01, 10000}, {0.1, 10000}, {0.3, 10000},
-		{0.001, 100000}, {0.01, 100000}, {0.1, 100000}, {0.3, 100000},
-		{0.001, 1000000}, {0.01, 1000000}, {0.1, 1000000}, {0.3, 1000000}}
+	}{{0.001, 1000}, {0.01, 1000}, {0.1, 1000}, {0.3, 1000},
+		{0.001, 10000}, {0.01, 10000}, {0.1, 10000}, {0.3, 10000},
+		{0.001, 100000}, {0.01, 100000}, {0.1, 100000}, {0.3, 100000}}
 	for _, test := range tests {
 		qf := NewPropability(test.S, test.P)
 		items := generateItems(test.S / 2)
