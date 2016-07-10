@@ -15,12 +15,12 @@ func TestNewPropability(t *testing.T) {
 }
 
 func TestAddBasic(t *testing.T) {
-	// 2^16 size, 8 bit remainder ~0.7MB
-	qf := New(16, 8)
+	qf := New(8, 3)
+
 	added := []string{"brown", "fox", "jump"}
 	not := []string{"turbo", "negro"}
 	qf.AddAll(added)
-
+	qf.info()
 	for _, s := range added {
 		if !qf.Contains(s) {
 			t.Fatal("Filter returned false for an added item")
@@ -38,7 +38,7 @@ func TestFalseNegatives(t *testing.T) {
 	tests := []struct {
 		P float64
 		S int
-	}{{0.01, 1000}, {0.01, 10000}, {0.01, 100000}}
+	}{{0.01, 1000}, {0.01, 10000}, {0.01, 100000}, {0.01, 1000000}}
 	for _, test := range tests {
 		qf := NewPropability(test.S, test.P)
 		items := generateItems(test.S / 2)
@@ -55,7 +55,9 @@ func TestFalsePositives(t *testing.T) {
 	tests := []struct {
 		P float64
 		S int
-	}{{0.01, 1000}, {0.01, 10000}, {0.01, 100000}, {0.01, 1000000}}
+	}{{0.001, 10000}, {0.01, 10000}, {0.1, 10000}, {0.3, 10000},
+		{0.001, 100000}, {0.01, 100000}, {0.1, 100000}, {0.3, 100000},
+		{0.001, 1000000}, {0.01, 1000000}, {0.1, 1000000}, {0.3, 1000000}}
 	for _, test := range tests {
 		qf := NewPropability(test.S, test.P)
 		items := generateItems(test.S / 2)
@@ -67,69 +69,18 @@ func TestFalsePositives(t *testing.T) {
 				positives++
 			}
 		}
+		for _, item := range items {
+			if !qf.Contains(item) {
+				t.Fatal("False negative")
+			}
+		}
 		allowed := float64(test.S) * test.P * 2.0
 		if float64(positives) > allowed {
-			t.Fatal("Too many positives, got", positives, "limit is", allowed)
+			t.Fatal("Too many positives, got", positives, "limit is", allowed, "test:", test)
 		}
 	}
 }
 
-func BenchmarkSmall(b *testing.B) {
-	qf := New(12, 6)
-	setSize := 1000
-	items_a := generateItems(setSize)
-	items_b := generateItems(setSize)
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		if err := qf.Add(items_a[i%setSize]); err != nil {
-			b.Fatal(err)
-		}
-		qf.Contains(items_a[i%setSize])
-		qf.Contains(items_b[i%setSize])
-	}
-	b.StopTimer()
-	//qf.info()
-	qf.data = nil
-	//runtime.GC()
-}
-
-func BenchmarkMedium(b *testing.B) {
-	qf := New(16, 8)
-	setSize := 10000
-	items_a := generateItems(setSize)
-	items_b := generateItems(setSize)
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		if err := qf.Add(items_a[i%setSize]); err != nil {
-			b.Fatal(err)
-		}
-		qf.Contains(items_a[i%setSize])
-		qf.Contains(items_b[i%setSize])
-	}
-	b.StopTimer()
-
-	qf.data = nil
-	//	runtime.GC()
-}
-
-func BenchmarkLarge(b *testing.B) {
-	qf := New(20, 12)
-	setSize := 100000
-	items_a := generateItems(setSize)
-	items_b := generateItems(setSize)
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		if err := qf.Add(items_a[i%setSize]); err != nil {
-			b.Fatal(err)
-		}
-		qf.Contains(items_a[i%setSize])
-		qf.Contains(items_b[i%setSize])
-	}
-	b.StopTimer()
-}
 func BenchmarkAdd(b *testing.B) {
 	qf := NewPropability(b.N*2, 0.01)
 	items := generateItems(b.N)
@@ -145,7 +96,9 @@ func BenchmarkContains(b *testing.B) {
 	qf := NewPropability(b.N*2, 0.01)
 	items := generateItems(b.N)
 	for i := 0; i < b.N; i++ {
-		qf.Add(items[i])
+		if i%2 == 0 {
+			qf.Add(items[i])
+		}
 	}
 	b.ReportAllocs()
 	b.ResetTimer()

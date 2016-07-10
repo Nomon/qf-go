@@ -22,18 +22,19 @@ type QuotientFilter struct {
 	// quotient and remainder bits
 	qbits uint8
 	rbits uint8
-	// total element size, qbits + 3 metadata bits
-	esize uint8
+	// total slot size, qbits + 3 metadata bits
+	ssize uint8
 	// how many elements does the filter contain and capacity 1 << qbits
 	len uint64
 	cap uint64
 	// data
 	data []uint64
-	// precalculated masks
-	elemMask uint64
-	qMask    uint64
-	rMask    uint64
-	h        hash.Hash64
+	// precalculated masks for slot, quotient and remainder
+	sMask uint64
+	qMask uint64
+	rMask uint64
+	// hash function
+	h hash.Hash64
 }
 
 // NewPropability returns a quotient filter that can accomidate capacity number of elements
@@ -56,29 +57,34 @@ func NewHash(h hash.Hash64, q, r uint8) *QuotientFilter {
 // it can hold 1 << q elements.
 func New(q, r uint8) *QuotientFilter {
 	if q+r > 64 {
-		panic("q + r has to be less than 64 bits")
+		panic("q + r has to be less 64 bits or less")
 	}
 	qf := &QuotientFilter{
 		qbits: q,
 		rbits: r,
-		esize: r + 3,
+		ssize: r + 3,
 		len:   0,
 		cap:   1 << q,
 		h:     fnv.New64a(),
 	}
 	qf.qMask = maskLower(uint64(q))
 	qf.rMask = maskLower(uint64(r))
-	qf.elemMask = maskLower(uint64(qf.esize))
+	qf.sMask = maskLower(uint64(qf.ssize))
 	qf.data = make([]uint64, uint64Size(q, r))
 	return qf
 }
 
 func (qf *QuotientFilter) info() {
-	fmt.Println("slot, is_occopied:is_continuation:is_shifted, remainder")
+	fmt.Printf("Filter qbits: %d, rbits: %d, len: %d, capacity: %d\n", qf.qbits, qf.rbits, qf.len, qf.cap)
+	fmt.Println("slot, (is_occopied:is_continuation:is_shifted): remainder")
 	for i := uint64(0); i < qf.cap; i++ {
 		s := qf.getSlot(i)
-		fmt.Printf("%d:\t\t%b%b%b\t%d\n", i, s&1, s&2>>1, s&4>>2, s.remainder())
+		if i%8 == 0 && i != 0 {
+			fmt.Printf("\n")
+		}
+		fmt.Printf("% 5d: (%b%b%b): % 6d | ", i, s&1, s&2>>1, s&4>>2, s.remainder())
 	}
+	fmt.Printf("\n")
 }
 
 func (qf *QuotientFilter) quotientAndRemainder(h uint64) (uint64, uint64) {
@@ -93,11 +99,11 @@ func (qf *QuotientFilter) hash(key string) uint64 {
 
 func (qf *QuotientFilter) getSlot(index uint64) slot {
 	_, sliceIndex, bitOffset, nextBits := qf.slotIndex(index)
-	s := (qf.data[sliceIndex] >> bitOffset) & qf.elemMask
+	s := (qf.data[sliceIndex] >> bitOffset) & qf.sMask
 	// does the slot span to next slice index, if so, capture rest of the bits from there
 	if nextBits > 0 {
 		sliceIndex++
-		s |= (qf.data[sliceIndex] & maskLower(uint64(nextBits))) << (uint64(qf.esize) - uint64(nextBits))
+		s |= (qf.data[sliceIndex] & maskLower(uint64(nextBits))) << (uint64(qf.ssize) - uint64(nextBits))
 	}
 	return slot(s)
 }
@@ -108,22 +114,22 @@ func (qf *QuotientFilter) setSlot(index uint64, s slot) {
 	// the number of bits the slot spans over to next slice item.
 	_, sliceIndex, bitOffset, nextBits := qf.slotIndex(index)
 	// remove everything but remainder and meta bits.
-	s &= slot(qf.elemMask)
-	qf.data[sliceIndex] &= ^(qf.elemMask << bitOffset)
+	s &= slot(qf.sMask)
+	qf.data[sliceIndex] &= ^(qf.sMask << bitOffset)
 	qf.data[sliceIndex] |= uint64(s) << bitOffset
 	// the slot spans slice boundary, write the rest of the element to next index.
 	if nextBits > 0 {
 		sliceIndex++
 		qf.data[sliceIndex] &^= maskLower(uint64(nextBits))
-		qf.data[sliceIndex] |= uint64(s) >> (uint64(qf.esize) - uint64(nextBits))
+		qf.data[sliceIndex] |= uint64(s) >> (uint64(qf.ssize) - uint64(nextBits))
 	}
 }
 
 func (qf *QuotientFilter) slotIndex(index uint64) (uint64, uint64, uint64, int) {
-	bitIndex := uint64(qf.esize) * index
+	bitIndex := uint64(qf.ssize) * index
 	bitOffset := bitIndex % 64
 	sliceIndex := bitIndex / 64
-	bitsInNextSlot := int(bitOffset) + int(qf.esize) - 64
+	bitsInNextSlot := int(bitOffset) + int(qf.ssize) - 64
 	return bitIndex, sliceIndex, bitOffset, bitsInNextSlot
 }
 
@@ -136,6 +142,8 @@ func (qf *QuotientFilter) next(index uint64) uint64 {
 
 // Contains checks if key is present in the filter
 // false positive propability is based on q, r and number of added keys
+// false negatives are not possible, unless Delete is used in conjunction with a hash function
+// that yields more that q+r bits.
 func (qf *QuotientFilter) Contains(key string) bool {
 	q, r := qf.quotientAndRemainder(qf.hash(key))
 
@@ -161,6 +169,7 @@ func (qf *QuotientFilter) Contains(key string) bool {
 	return false
 }
 
+// Add adds the key to the filter.
 func (qf *QuotientFilter) Add(key string) error {
 	if qf.len >= qf.cap {
 		return ErrFull
