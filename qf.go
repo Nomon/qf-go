@@ -14,8 +14,10 @@ func init() {
 	rand.Seed(time.Now().UTC().UnixNano())
 }
 
-var ErrFull error = errors.New("filter is at its max capacity")
+// ErrFull is returned when Add is called while the filter is at max capacity.
+var ErrFull = errors.New("filter is at its max capacity")
 
+// QuotientFilter is the implementation
 type QuotientFilter struct {
 	// quotient and remainder bits
 	qbits uint8
@@ -72,7 +74,11 @@ func New(q, r uint8) *QuotientFilter {
 }
 
 func (qf *QuotientFilter) info() {
-	fmt.Printf("%#v\n", qf)
+	fmt.Println("slot, is_occopied:is_continuation:is_shifted, remainder")
+	for i := uint64(0); i < qf.cap; i++ {
+		s := qf.getSlot(i)
+		fmt.Printf("%d:\t\t%b%b%b\t%d\n", i, s&1, s&2>>1, s&4>>2, s.remainder())
+	}
 }
 
 func (qf *QuotientFilter) quotientAndRemainder(h uint64) (uint64, uint64) {
@@ -85,6 +91,34 @@ func (qf *QuotientFilter) hash(key string) uint64 {
 	return qf.h.Sum64()
 }
 
+func (qf *QuotientFilter) getSlot(index uint64) slot {
+	_, sliceIndex, bitOffset, nextBits := qf.slotIndex(index)
+	s := (qf.data[sliceIndex] >> bitOffset) & qf.elemMask
+	// does the slot span to next slice index, if so, capture rest of the bits from there
+	if nextBits > 0 {
+		sliceIndex++
+		s |= (qf.data[sliceIndex] & maskLower(uint64(nextBits))) << (uint64(qf.esize) - uint64(nextBits))
+	}
+	return slot(s)
+}
+
+func (qf *QuotientFilter) setSlot(index uint64, s slot) {
+	// slot starts at bit data[sliceIndex][bitoffset:]
+	// if the slot crosses slice boundary, nextBits contains
+	// the number of bits the slot spans over to next slice item.
+	_, sliceIndex, bitOffset, nextBits := qf.slotIndex(index)
+	// remove everything but remainder and meta bits.
+	s &= slot(qf.elemMask)
+	qf.data[sliceIndex] &= ^(qf.elemMask << bitOffset)
+	qf.data[sliceIndex] |= uint64(s) << bitOffset
+	// the slot spans slice boundary, write the rest of the element to next index.
+	if nextBits > 0 {
+		sliceIndex++
+		qf.data[sliceIndex] &^= maskLower(uint64(nextBits))
+		qf.data[sliceIndex] |= uint64(s) >> (uint64(qf.esize) - uint64(nextBits))
+	}
+}
+
 func (qf *QuotientFilter) slotIndex(index uint64) (uint64, uint64, uint64, int) {
 	bitIndex := uint64(qf.esize) * index
 	bitOffset := bitIndex % 64
@@ -93,56 +127,34 @@ func (qf *QuotientFilter) slotIndex(index uint64) (uint64, uint64, uint64, int) 
 	return bitIndex, sliceIndex, bitOffset, bitsInNextSlot
 }
 
-func (qf *QuotientFilter) element(pos uint64) (element uint64) {
-	_, sliceIndex, bitOffset, nextBits := qf.slotIndex(pos)
-	// align the slot and mask with the element mask
-	element = (qf.data[sliceIndex] >> bitOffset) & qf.elemMask
-	// does the slot span to next slice index, if so, capture rest of the bits from there
-	if nextBits > 0 {
-		sliceIndex++
-		element |= (qf.data[sliceIndex] & maskLower(uint64(nextBits))) << (uint64(qf.esize) - uint64(nextBits))
-	}
-	return
+func (qf *QuotientFilter) previous(index uint64) uint64 {
+	return (index - 1) & qf.qMask
 }
-
-func (qf *QuotientFilter) setElement(pos, element uint64) {
-	// slot starts at bit data[sliceIndex][bitoffset:]
-	// if the slot crosses slice boundary, nextBits contains
-	// the number of bits the slot spans over to next slice item.
-	_, sliceIndex, bitOffset, nextBits := qf.slotIndex(pos)
-	// remove everything but remainder and meta bits.
-	element &= qf.elemMask
-	qf.data[sliceIndex] &= ^(qf.elemMask << bitOffset)
-	qf.data[sliceIndex] |= element << bitOffset
-	// the slot spans slice boundary, write the rest of the element to next index.
-	if nextBits > 0 {
-		sliceIndex++
-		qf.data[sliceIndex] &= ^maskLower(uint64(nextBits))
-		qf.data[sliceIndex] |= element >> (uint64(qf.esize) - uint64(nextBits))
-	}
+func (qf *QuotientFilter) next(index uint64) uint64 {
+	return (index + 1) & qf.qMask
 }
 
 // Contains checks if key is present in the filter
 // false positive propability is based on q, r and number of added keys
 func (qf *QuotientFilter) Contains(key string) bool {
-	h := qf.hash(key)
-	q, r := qf.quotientAndRemainder(h)
+	q, r := qf.quotientAndRemainder(qf.hash(key))
 
-	if !isOccupied(qf.element(q)) {
+	if !qf.getSlot(q).isOccupied() {
 		return false
 	}
 
-	start := qf.findRun(q)
+	index := qf.findRun(q)
+	slot := qf.getSlot(index)
 	for {
-		remainder := getRemainder(qf.element(start))
+		remainder := slot.remainder()
 		if remainder == r {
 			return true
 		} else if remainder > r {
 			return false
 		}
-		start = qf.next(start)
-
-		if !isContinuation(qf.element(start)) {
+		index = qf.next(index)
+		slot = qf.getSlot(index)
+		if !slot.isContinuation() {
 			break
 		}
 	}
@@ -153,96 +165,99 @@ func (qf *QuotientFilter) Add(key string) error {
 	if qf.len >= qf.cap {
 		return ErrFull
 	}
-	h := qf.hash(key)
-	q, r := qf.quotientAndRemainder(h)
-	elem := qf.element(q)
-	tmp := (int64(r) << 3) & int64(^7)
-	entry := uint64(tmp)
+	q, r := qf.quotientAndRemainder(qf.hash(key))
+	slot := qf.getSlot(q)
+	new := newSlot(r)
 
-	if isEmpty(elem) {
-		qf.setElement(q, setOccupied(entry))
+	// if slot is empty, just set the new there and occupy it and return.
+	if slot.isEmpty() {
+		qf.setSlot(q, new.setOccupied())
 		qf.len++
 		return nil
 	}
-	if !isOccupied(elem) {
-		qf.setElement(q, setOccupied(elem))
+
+	if !slot.isOccupied() {
+		qf.setSlot(q, slot.setOccupied())
 	}
+
 	start := qf.findRun(q)
-	s := start
-	if isOccupied(elem) {
+	index := start
+
+	if slot.isOccupied() {
+		runSlot := qf.getSlot(index)
 		for {
-			rem := getRemainder(qf.element(s))
-			if r == rem {
+			remainder := runSlot.remainder()
+			if r == remainder {
 				return nil
-			} else if rem > r {
+			} else if remainder > r {
 				break
 			}
-			s = qf.next(s)
-			if !isContinuation(qf.element(s)) {
+			index = qf.next(index)
+			runSlot = qf.getSlot(index)
+			if !runSlot.isContinuation() {
 				break
 			}
 		}
-		if s == start {
-			old := qf.element(start)
-			qf.setElement(start, setContinuation(old))
+		if index == start {
+			old := qf.getSlot(start)
+			qf.setSlot(start, old.setContinuation())
 		} else {
-			entry = setContinuation(entry)
+			new = new.setContinuation()
 		}
 	}
-	if s != q {
-		entry = setShifted(entry)
+	if index != q {
+		new = new.setShifted()
 	}
-	qf.insert(s, entry)
+	qf.insertSlot(index, new)
 	qf.len++
 
 	return nil
 }
 
-func (qf *QuotientFilter) insert(pos, e uint64) {
-	cur := e
-
+func (qf *QuotientFilter) insertSlot(index uint64, s slot) {
+	curr := s
 	for {
-		prev := qf.element(pos)
-		empty := isEmpty(prev)
+		prev := qf.getSlot(index)
+		empty := prev.isEmpty()
 		if !empty {
-			prev = setShifted(prev)
-			if isOccupied(prev) {
-				cur = setOccupied(cur)
-				prev = clearOccupied(prev)
+			prev = prev.setShifted()
+			if prev.isOccupied() {
+				curr = curr.setOccupied()
+				prev = prev.clearOccupied()
 			}
 		}
-		qf.setElement(pos, cur)
-		cur = prev
-		pos = qf.next(pos)
+		qf.setSlot(index, curr)
+		curr = prev
+		index = qf.next(index)
 		if empty {
 			break
 		}
 	}
 }
 
-func (qf *QuotientFilter) findRun(q uint64) (run uint64) {
-	var elem uint64
-	pos := q
+func (qf *QuotientFilter) findRun(quotient uint64) (run uint64) {
+	var slot slot
+	index := quotient
 	for {
-		elem = qf.element(pos)
-		if !isShifted(elem) {
+		slot = qf.getSlot(index)
+		if !slot.isShifted() {
 			break
 		}
-		pos = qf.previous(pos)
+		index = qf.previous(index)
 	}
-	run = pos
-	for pos != q {
+	run = index
+	for index != quotient {
 		for {
 			run = qf.next(run)
-			elem = qf.element(run)
-			if !isContinuation(elem) {
+			slot = qf.getSlot(run)
+			if !slot.isContinuation() {
 				break
 			}
 		}
 		for {
-			pos = qf.next(pos)
-			elem = qf.element(pos)
-			if isOccupied(elem) {
+			index = qf.next(index)
+			slot = qf.getSlot(index)
+			if slot.isOccupied() {
 				break
 			}
 		}
@@ -251,63 +266,11 @@ func (qf *QuotientFilter) findRun(q uint64) (run uint64) {
 }
 
 // AddAll adds multiple keys to the filter
-func (q *QuotientFilter) AddAll(keys []string) error {
+func (qf *QuotientFilter) AddAll(keys []string) error {
 	for _, k := range keys {
-		if err := q.Add(k); err != nil {
+		if err := qf.Add(k); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func (qf *QuotientFilter) Delete(key string) bool {
-	h := qf.hash(key)
-	q, r := qf.quotientAndRemainder(h)
-	elem := qf.element(q)
-	if !isOccupied(elem) || qf.len == 0 {
-		return false
-	}
-	start := qf.findRun(q)
-	pos := start
-	var rem uint64
-	for {
-		rem = getRemainder(qf.element(pos))
-		if rem == r {
-			break
-		} else if rem > r {
-			return true
-		}
-		pos = qf.next(pos)
-		if !isContinuation(qf.element(pos)) {
-			break
-		}
-	}
-	if rem != r {
-		return true
-	}
-	var replaceRunStart bool
-	var kill uint64
-	if pos == q {
-		kill = elem
-	} else {
-		kill = qf.element(pos)
-	}
-	if isRunStart(kill) {
-		next := qf.element(qf.next(pos))
-		if !isContinuation(next) {
-			elem = setOccupied(elem)
-			qf.setElement(q, elem)
-		}
-	}
-	if replaceRunStart {
-
-	}
-	return true
-}
-
-func (qf *QuotientFilter) previous(pos uint64) uint64 {
-	return (pos - 1) & qf.qMask
-}
-func (qf *QuotientFilter) next(pos uint64) uint64 {
-	return (pos + 1) & qf.qMask
 }
