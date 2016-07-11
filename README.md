@@ -22,6 +22,9 @@ if !qf.Contains("key") {
   panic("False negative not possible")
 }
 ```
+## docs
+
+https://godoc.org/github.com/Nomon/qf-go  
 
 ## Credits
 
