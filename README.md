@@ -30,8 +30,8 @@ golang port of Vedant Kumars C implementatuon.
 
 
 ## License MIT
-Additional work Copyright (c) 2016 Matti Savolainen
-Copyright 2014 Vedant Kumar <vsk@berkeley.edu>
+Additional work Copyright (c) 2016 Matti Savolainen  
+Copyright 2014 Vedant Kumar <vsk@berkeley.edu>  
 
 
 Permission is hereby granted, free of charge, to any person obtaining a
