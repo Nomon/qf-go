@@ -32,8 +32,8 @@ https://github.com/dsx724/php-quotient-filter
 
 
 ## License MIT
-Additional work Copyright (c) 2016 Matti Savolainen
-Copyright 2014 Vedant Kumar <vsk@berkeley.edu>
+Additional work Copyright (c) 2016 Matti Savolainen  
+Copyright 2014 Vedant Kumar <vsk@berkeley.edu>  
 
 
 Permission is hereby granted, free of charge, to any person obtaining a
