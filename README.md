@@ -30,7 +30,7 @@ golang port of Vedant Kumars C implementatuon.
 
 
 ## License MIT
-Additional work Copyright (c) 2016 Matti Savolainen  
+Additional work Copyright (c) 2016 Matti Savolainen <matti@unity3d.com>  
 Copyright 2014 Vedant Kumar <vsk@berkeley.edu>  
 
 
