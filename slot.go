@@ -3,7 +3,7 @@ package qf
 type slot uint64
 
 func newSlot(remainder uint64) slot {
-	// shift remained right to make room for 3 control bits.
+	// shift remained left to make room for 3 control bits.
 	return slot((int64(remainder) << 3) & ^7)
 }
 func (s slot) isOccupied() bool {
