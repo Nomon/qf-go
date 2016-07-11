@@ -25,10 +25,10 @@ if !qf.Contains("key") {
 
 ## Credits
 
-To all existing quotient filter implementations I used as a base and learning material:
-https://github.com/vedantk/quotient-filter
-https://github.com/bucaojit/QuotientFilter
-https://github.com/dsx724/php-quotient-filter
+To all existing quotient filter implementations I used as a base and learning material:  
+https://github.com/vedantk/quotient-filter  
+https://github.com/bucaojit/QuotientFilter  
+https://github.com/dsx724/php-quotient-filter  
 
 
 ## License MIT
