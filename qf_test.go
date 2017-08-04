@@ -7,17 +7,17 @@ import (
 	"time"
 )
 
-func TestNewPropability(t *testing.T) {
+func TestNewProbability(t *testing.T) {
 	tests := []struct {
 		P float64
 		S int
 	}{{0.001, 10000}, {0.01, 10000}, {0.1, 10000}, {0.3, 10000},
 		{0.001, 100000}, {0.01, 100000}, {0.1, 100000}, {0.3, 100000}}
 	for _, test := range tests {
-		qf := NewPropability(test.S, test.P)
+		qf := NewProbability(test.S, test.P)
 		qf.AddAll(generateItems(test.S))
-		if qf.FPPropability() > test.P {
-			t.Fatal("False positive rate too high, asked", test.P, "got", qf.FPPropability(), "test", test)
+		if qf.FPProbability() > test.P {
+			t.Fatal("False positive rate too high, asked", test.P, "got", qf.FPProbability(), "test", test)
 		}
 	}
 }
@@ -48,12 +48,12 @@ func TestFalseNegatives(t *testing.T) {
 		S int
 	}{{0.01, 1000}, {0.01, 10000}, {0.01, 100000}}
 	for _, test := range tests {
-		qf := NewPropability(test.S, test.P)
+		qf := NewProbability(test.S, test.P)
 		items := generateItems(test.S / 2)
 		qf.AddAll(items)
 		for _, item := range items {
 			if !qf.Contains(item) {
-				t.Fatal("False negative, key:", item, "size", test.S, "propability", test.P)
+				t.Fatal("False negative, key:", item, "size", test.S, "probability", test.P)
 			}
 		}
 	}
@@ -67,7 +67,7 @@ func TestFalsePositives(t *testing.T) {
 		{0.001, 10000}, {0.01, 10000}, {0.1, 10000}, {0.3, 10000},
 		{0.001, 100000}, {0.01, 100000}, {0.1, 100000}, {0.3, 100000}}
 	for _, test := range tests {
-		qf := NewPropability(test.S, test.P)
+		qf := NewProbability(test.S, test.P)
 		items := generateItems(test.S / 2)
 		itemsB := generateItems(test.S / 2)
 		qf.AddAll(items)
@@ -90,7 +90,7 @@ func TestFalsePositives(t *testing.T) {
 }
 
 func BenchmarkAdd(b *testing.B) {
-	qf := NewPropability(b.N*2, 0.01)
+	qf := NewProbability(b.N*2, 0.01)
 	items := generateItems(b.N)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -101,7 +101,7 @@ func BenchmarkAdd(b *testing.B) {
 }
 
 func BenchmarkContains(b *testing.B) {
-	qf := NewPropability(b.N*2, 0.01)
+	qf := NewProbability(b.N*2, 0.01)
 	items := generateItems(b.N)
 	for i := 0; i < b.N; i++ {
 		if i%2 == 0 {

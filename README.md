@@ -16,7 +16,7 @@ For more details, see: https://en.wikipedia.org/wiki/Quotient_filter
 ```go
 // Create a filter that can hold 1m elements while maintaining 1% false positive
 // rate when at 1 million items length.
-qf := NewPropability(1000000, 0.01)
+qf := NewProbability(1000000, 0.01)
 qf.Add("key")
 if !qf.Contains("key") {
   panic("False negative not possible")
