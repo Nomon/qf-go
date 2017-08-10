@@ -38,13 +38,13 @@ type QuotientFilter struct {
 	h hash.Hash64
 }
 
-// NewPropability returns a quotient filter that can accomidate capacity number of elements
-// and maintain the propability passed.
-func NewPropability(capacity int, propability float64) *QuotientFilter {
-	// size to double asked capacity so that propability is maintained
+// NewProbability returns a quotient filter that can accomidate capacity number of elements
+// and maintain the probability passed.
+func NewProbability(capacity int, probability float64) *QuotientFilter {
+	// size to double asked capacity so that probability is maintained
 	// at capacity num keys (at 50% fill rate)
 	q := uint8(math.Ceil(math.Log2(float64(capacity * 2))))
-	r := uint8(-math.Log2(propability))
+	r := uint8(-math.Log2(probability))
 	return New(q, r)
 }
 
@@ -77,20 +77,20 @@ func New(q, r uint8) *QuotientFilter {
 	return qf
 }
 
-// FPPropability returns the propability for false positive with the current fillrate
+// FPProbability returns the probability for false positive with the current fillrate
 // n = length
 // m = capacity
 // a = n / m
 // r = remainder bits
-// then propability for false positive is
+// then probability for false positive is
 // 1 - e^(-a/2^r) <= 2^-r
-func (qf *QuotientFilter) FPPropability() float64 {
+func (qf *QuotientFilter) FPProbability() float64 {
 	a := float64(qf.len) / float64(qf.cap)
 	return 1.0 - math.Pow(math.E, -(a/math.Pow(2, float64(qf.rbits))))
 }
 
 func (qf *QuotientFilter) info() {
-	fmt.Printf("Filter qbits: %d, rbits: %d, len: %d, capacity: %d, current fp rate: %f\n", qf.qbits, qf.rbits, qf.len, qf.cap, qf.FPPropability())
+	fmt.Printf("Filter qbits: %d, rbits: %d, len: %d, capacity: %d, current fp rate: %f\n", qf.qbits, qf.rbits, qf.len, qf.cap, qf.FPProbability())
 	fmt.Println("slot, (is_occopied:is_continuation:is_shifted): remainder")
 	for i := uint64(0); i < qf.cap; i++ {
 		s := qf.getSlot(i)
@@ -156,7 +156,7 @@ func (qf *QuotientFilter) next(index uint64) uint64 {
 }
 
 // Contains checks if key is present in the filter
-// false positive propability is based on q, r and number of added keys
+// false positive probability is based on q, r and number of added keys
 // false negatives are not possible, unless Delete is used in conjunction with a hash function
 // that yields more that q+r bits.
 func (qf *QuotientFilter) Contains(key string) bool {
